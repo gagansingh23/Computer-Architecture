@@ -65,6 +65,15 @@ but you'll have to implement those three above instructions first!
 * Read this whole file.
 * Skim the spec.
 
+cpu.py
+ls8.py
+
+
+
+cpu, essentially functions as a processing unit
+ls8, essentially a program for the cpu to run
+
+
 ## Step 1: Add the constructor to `cpu.py`
 
 Add list properties to the `CPU` class to hold 256 bytes of memory and 8
