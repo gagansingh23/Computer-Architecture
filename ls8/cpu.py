@@ -9,6 +9,12 @@ MUL = 0b10100010
 NOP = 0b00000000
 PUSH = 0b01000101   
 POP = 0b01000110
+CALL = 0b01010000
+RET = 0b00010001
+CMP = 0b10100111
+JEQ = 0b01010101
+JMP = 0b01010100
+JNE = 0b01010110
 
 class CPU:
     """Main CPU class."""
@@ -19,11 +25,11 @@ class CPU:
         self.reg = [0] * 8
         self.pc = 0 #program counter
         self.running = True
+        self.flag = 0b00000000
+        self.reg[7] = 255
+        self.sp = self.reg[7]
         
         
-
-
-
     # accept the address to read and return the value stored there.
     def ram_read(self, index):
         # index contains address that is being read or written to
@@ -68,15 +74,19 @@ class CPU:
 
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
-        print("alu", reg_a, reg_b)
-        a = self.reg[reg_a]
-        b = self.reg[reg_b]
-        print(a, b)
         if op == "ADD":
             self.reg[reg_a] += self.reg[reg_b]
         elif op == "MUL":
             self.reg[reg_a] *= self.reg[reg_b]
-        #elif op == "SUB": etc
+        elif op == "CMP":
+            value_1 = self.reg[reg_a]
+            value_2 = self.reg[reg_b]
+            if value_1 > value_2:
+                self.flag = 0b00000010 #sets flag to "2"
+            elif value_1 == value_2:
+                self.flag = 0b00000001 #sets flag to "1"
+            elif value_1 < value_2:
+                self.flag = 0b00000100
         else:
             raise Exception("Unsupported ALU operation")
         
@@ -100,57 +110,78 @@ class CPU:
 
         for i in range(8):
             print(" %02X" % self.reg[i], end='')
-
         print()
 
     def run(self):
         """Run the CPU."""
-        
-        while self.running:
+        running = True
+        while running:
             ir = self.ram_read(self.pc)
-            reg_num = self.ram_read(self.pc + 1)
-            value = self.ram_read(self.pc + 2)
-            if ir == LDI: #SAVE THE REG and set value of reg to int
-                self.reg[reg_num] = value
-                self.pc += 3
-            elif ir == HLT: #HALT
-                self.running = False
-            elif ir == PRN: #PRINT REG
-                reg_num = self.ram[self.pc + 1]
-                print(self.reg[reg_num])
-                self.pc += 2
+            operand_a = self.ram_read(self.pc + 1)
+            operand_b = self.ram_read(self.pc + 2)
+
+            number_of_operands = int(ir) >> 6
+
+            self.pc += (1 + number_of_operands)
+
+            # LDI: "LOAD IMMEDIATE" Set the value of a register to an integer.
+            if ir == LDI:
+                self.reg[operand_a] = operand_b
+
+            # HLT: "HALT" the CPU.
+            elif ir == HLT:
+                running = False
+
+            # PRN: "PRINT" numeric value stored in the given register.
+            elif ir == PRN:
+                print( self.reg[operand_a] )
+
+            # MUL: "MULTIPLY" the values in two registers together and store the result in registerA.
             elif ir == MUL:
-                self.alu("MUL", reg_num, value)
-                self.pc += 3
+                self.reg[operand_a] *= self.reg[operand_b]
+
+            # PUSH: "PUSH" the value in the given register on the stack.
             elif ir == PUSH:
-                self.reg[7] -= 1
-                reg_a = self.ram[self.pc+1]
-                value = self.reg[reg_a]
+                self.sp = (self.sp % 257) - 1
+                self.ram[self.sp] = self.reg[operand_a]
 
-                # put it on the stack pointer address
-                sp = self.reg[7]
-                self.ram[sp] = value
-
-                # increment pc
-                self.pc += 2
+            # POP: "POP" the value from the top of the stack and store it in the PC.
             elif ir == POP:
+                self.reg[operand_a] = self.ram[self.sp]
+                self.sp = (self.sp % 257) + 1
+
+            # CMP: "COMPARE" the results in memory and change the flag is accordance to the result
+            elif ir == CMP:
+                self.alu("CMP", operand_a, operand_b)
+
+            # CALL: we "CALL" the location of the register in memory so we can jump to in the subroutine
+            elif ir == CALL:
+                address = self.reg[operand_a]
+                return_address = self.pc + 2
+                self.reg[7] -= 1
                 sp = self.reg[7]
+                self.ram[sp] = return_address
+                self.pc = address
 
-                # get register number to put value in
-                reg_a = self.ram[self.pc+1]
-
-                # use stack pointer to get the value
-                value = self.ram[sp]
-                # put the value into a given register
-                self.reg[reg_a] = value
-
-                # increment stack pointer
+            # RET: "RETURN" the procedure from the value from the top of the stack and store it in the PC.
+            elif ir == RET:
+                self.pc = self.ram_read(self.reg[7])
                 self.reg[7] += 1
-                # increment program counter
-                self.pc += 2
 
-            else:
-                print(f'Unknown instruction {ir} at address {self.pc}')
-                sys.exit(1)
+            # JMP: ALWAYS "JUMP" to the address stored in the given register
+            elif ir == JMP:
+                address = self.reg[operand_a]
+                self.pc = address
 
+            # JEQ: "JUMP IF EQUAL" If the flag result is == 0 then jump to the address stored in the given register
+            elif ir == JEQ:
+                if self.flag == 0b00000001:
+                    address = self.reg[operand_a]
+                    self.pc = address
 
+            # JNE: "JUMP IF NOT EQUAL" if flag DOESN"T != 0 then jump to the address stored in the given register.
+            elif ir == JNE:
+                if self.flag & 0b00000001 == 0b00000000:
+                    address = self.reg[operand_a]
+                    self.pc = address
+        
